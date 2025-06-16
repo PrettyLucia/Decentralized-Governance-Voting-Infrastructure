@@ -136,3 +136,47 @@
   )
 )
 
+;; Quadratic Voting Mechanism
+(define-public (cast-quadratic-vote 
+  (proposal-id uint) 
+  (vote-type bool)
+)
+  (let 
+    (
+      (proposal (unwrap! (map-get? proposals {proposal-id: proposal-id}) ERR-INVALID-PROPOSAL))
+      (voter-balance (ft-get-balance governance-token tx-sender))
+      (quadratic-weight (sqrti voter-balance))
+      (current-block stacks-block-height)
+    )
+    ;; Validation Checks
+    (asserts! (not (var-get contract-paused)) ERR-UNAUTHORIZED)
+    (asserts! (< current-block (get end-block proposal)) ERR-PROPOSAL-CLOSED)
+    (asserts! (is-none (map-get? votes {proposal-id: proposal-id, voter: tx-sender})) ERR-ALREADY-VOTED)
+    
+    ;; Record Vote with Quadratic Weighting
+    (map-set votes 
+      {proposal-id: proposal-id, voter: tx-sender}
+      {
+        voting-power: voter-balance,
+        vote-type: vote-type,
+        quadratic-weight: quadratic-weight,
+        timestamp: current-block
+      }
+    )
+    
+    ;; Update Proposal Vote Totals
+    (if vote-type 
+      (map-set proposals 
+        {proposal-id: proposal-id}
+        (merge proposal {vote-for: (+ (get vote-for proposal) quadratic-weight)})
+      )
+      (map-set proposals 
+        {proposal-id: proposal-id}
+        (merge proposal {vote-against: (+ (get vote-against proposal) quadratic-weight)})
+      )
+    )
+    
+    (ok true)
+  )
+)
+
