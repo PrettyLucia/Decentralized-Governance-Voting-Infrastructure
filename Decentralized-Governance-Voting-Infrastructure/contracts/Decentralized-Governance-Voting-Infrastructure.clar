@@ -180,3 +180,77 @@
   )
 )
 
+;; Delegation System with Advanced Features
+(define-public (delegate-voting-power 
+  (delegate principal)
+  (max-depth uint)
+)
+  (let 
+    (
+      (current-block stacks-block-height)
+      (current-delegation (map-get? delegations tx-sender))
+    )
+    ;; Validation Checks
+    (asserts! (not (is-eq tx-sender delegate)) ERR-INVALID-DELEGATION)
+    (asserts! (or (is-none current-delegation) (< (unwrap-panic (get delegation-depth current-delegation)) max-depth)) ERR-EXCEEDED-DELEGATION-DEPTH)
+    
+    ;; Set Delegation
+    (map-set delegations 
+      tx-sender 
+      {
+        delegated-to: delegate,
+        delegation-depth: u0,
+        max-delegation-depth: max-depth,
+        delegated-at: current-block
+      }
+    )
+    
+    (ok true)
+  )
+)
+
+;; Execute Proposal with Advanced Validation
+(define-public (execute-proposal (proposal-id uint))
+  (let 
+    (
+      (proposal (unwrap! (map-get? proposals {proposal-id: proposal-id}) ERR-INVALID-PROPOSAL))
+      (current-block stacks-block-height)
+      (total-tokens (var-get total-governance-tokens))
+    )
+    ;; Validation Checks
+    (asserts! (>= current-block (get end-block proposal)) ERR-PROPOSAL-CLOSED)
+    (asserts! (not (get executed proposal)) ERR-UNAUTHORIZED)
+    
+    ;; Quorum and Threshold Validation
+    (let 
+      (
+        (total-votes (+ (get vote-for proposal) (get vote-against proposal)))
+        (quorum-percentage (/ (* total-votes u100) total-tokens))
+        (vote-for-percentage (/ (* (get vote-for proposal) u100) total-votes))
+      )
+      ;; Check Quorum and Pass Thresholds
+      (asserts! (>= quorum-percentage (get quorum-threshold proposal)) ERR-PROPOSAL-EXECUTION-FAILED)
+      (asserts! (>= vote-for-percentage (get pass-threshold proposal)) ERR-PROPOSAL-EXECUTION-FAILED)
+      
+      ;; Determine Proposal Outcome
+      (let 
+        (
+          (outcome (> (get vote-for proposal) (get vote-against proposal)))
+        )
+        ;; Update Proposal Status
+        (map-set proposals 
+          {proposal-id: proposal-id}
+          (merge proposal 
+            {
+              executed: true,
+              execution-result: (some outcome)
+            }
+          )
+        )
+        
+        (ok outcome)
+      )
+    )
+  )
+)
+
