@@ -387,3 +387,46 @@
     )
   )
 )
+
+;; Execute time-locked proposal
+(define-public (execute-time-locked-proposal (proposal-id uint))
+  (let 
+    (
+      (proposal (unwrap! (map-get? proposals {proposal-id: proposal-id}) ERR-INVALID-PROPOSAL))
+      (time-lock (unwrap! (map-get? time-locks {proposal-id: proposal-id}) ERR-INVALID-TIMELOCK))
+      (current-block stacks-block-height)
+    )
+    ;; Validation Checks
+    (asserts! (not (get executed proposal)) ERR-UNAUTHORIZED)
+    (asserts! (not (get executed time-lock)) ERR-UNAUTHORIZED)
+    (asserts! (>= current-block (get execution-block time-lock)) ERR-INVALID-TIMELOCK)
+    
+    ;; Update Time Lock Status
+    (map-set time-locks
+      {proposal-id: proposal-id}
+      (merge time-lock {executed: true})
+    )
+    
+    ;; Update Proposal Status
+    (map-set proposals 
+      {proposal-id: proposal-id}
+      (merge proposal 
+        {
+          executed: true,
+          execution-result: (some true)
+        }
+      )
+    )
+    
+    (ok true)
+  )
+)
+
+;; Treasury management functions
+(define-public (deposit-to-treasury (amount uint))
+  (begin
+    (try! (ft-transfer? governance-token amount tx-sender (as-contract tx-sender)))
+    (var-set treasury-balance (+ (var-get treasury-balance) amount))
+    (ok true)
+  )
+)
