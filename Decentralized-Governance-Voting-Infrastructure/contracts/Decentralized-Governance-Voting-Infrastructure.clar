@@ -312,3 +312,78 @@
     (ok true)
   )
 )
+
+;; NEW FEATURE: Vote Types (beyond simple yes/no)
+(define-constant VOTE-TYPES 
+  {
+    FOR: u1,
+    AGAINST: u2,
+    ABSTAIN: u3
+  }
+)
+
+;; Governance configuration variables
+(define-data-var min-proposal-duration uint u144) ;; Default: ~1 day at 10 min block times
+(define-data-var max-proposal-duration uint u4320) ;; Default: ~30 days at 10 min block times
+(define-data-var proposal-submission-min-tokens uint u100000) ;; Minimum tokens to submit proposal
+(define-data-var treasury-max-per-proposal uint u100000000) ;; 10% of total token supply
+
+;; Treasury management
+(define-data-var treasury-balance uint u0)
+(define-map treasury-allocations
+  {allocation-id: uint}
+  {
+    proposal-id: uint,
+    recipient: principal,
+    amount: uint,
+    executed: bool
+  }
+)
+
+(define-data-var next-allocation-id uint u0)
+
+;; Time-lock mechanism
+(define-map time-locks
+  {proposal-id: uint}
+  {
+    execution-block: uint,
+    executed: bool
+  }
+)
+
+;; Time-locked proposal execution 
+(define-public (schedule-time-locked-execution (proposal-id uint) (delay-blocks uint))
+  (let 
+    (
+      (proposal (unwrap! (map-get? proposals {proposal-id: proposal-id}) ERR-INVALID-PROPOSAL))
+      (current-block stacks-block-height)
+      (total-tokens (var-get total-governance-tokens))
+    )
+    ;; Validation Checks
+    (asserts! (>= current-block (get end-block proposal)) ERR-PROPOSAL-CLOSED)
+    (asserts! (not (get executed proposal)) ERR-UNAUTHORIZED)
+    
+    ;; Quorum and Threshold Validation
+    (let 
+      (
+        (total-votes (+ (get vote-for proposal) (get vote-against proposal)))
+        (quorum-percentage (/ (* total-votes u100) total-tokens))
+        (vote-for-percentage (/ (* (get vote-for proposal) u100) total-votes))
+      )
+      ;; Check Quorum and Pass Thresholds
+      (asserts! (>= quorum-percentage (get quorum-threshold proposal)) ERR-PROPOSAL-EXECUTION-FAILED)
+      (asserts! (>= vote-for-percentage (get pass-threshold proposal)) ERR-PROPOSAL-EXECUTION-FAILED)
+      
+      ;; Schedule execution with time lock
+      (map-set time-locks
+        {proposal-id: proposal-id}
+        {
+          execution-block: (+ current-block delay-blocks),
+          executed: false
+        }
+      )
+      
+      (ok true)
+    )
+  )
+)
