@@ -293,3 +293,22 @@
   )
 )
 
+;; Advanced Governance Metrics
+(define-read-only (get-governance-metrics)
+  {
+    total-governance-tokens: (var-get total-governance-tokens),
+    total-proposals: (var-get next-proposal-id),
+    contract-paused: (var-get contract-paused)
+  }
+)
+
+;; Token Burning Mechanism (Optional)
+(define-public (burn-governance-tokens (amount uint))
+  (begin
+    (try! (ft-burn? governance-token amount tx-sender))
+    (var-set total-governance-tokens 
+      (- (var-get total-governance-tokens) amount)
+    )
+    (ok true)
+  )
+)
